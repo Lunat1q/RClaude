@@ -172,3 +172,7 @@ npm run typecheck && npm run build
 ## Deployment
 
 Built from the `Dockerfile` (see [Install on Coolify](#install-on-coolify)). The container runs as the unprivileged `claude` user (uid 1000). In host mode, Claude runs on the host through SSH. Without host mode, it's confined to the container and its volumes.
+
+## License
+
+[MIT](LICENSE)
