@@ -61,8 +61,8 @@ export function remoteCommand(cwd: string, argv: string[], env: Record<string, s
 }
 
 /** Runs a short command on the host and returns stdout (throws on non-zero exit). */
-export function hostExecSync(cwd: string, argv: string[], timeoutMs = 15_000): string {
-  return execFileSync("ssh", [...sshArgs(false), remoteCommand(cwd, argv)], { timeout: timeoutMs, encoding: "utf8" });
+export function hostExecSync(cwd: string, argv: string[], timeoutMs = 15_000, input?: Buffer): string {
+  return execFileSync("ssh", [...sshArgs(false), remoteCommand(cwd, argv)], { timeout: timeoutMs, encoding: "utf8", input, maxBuffer: 1 << 20 });
 }
 
 export function hostExec(cwd: string, argv: string[], timeoutMs = 20_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {

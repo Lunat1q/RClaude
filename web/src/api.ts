@@ -41,6 +41,20 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
   return data as T;
 }
 
+/** Uploads a file to `<dir>/<folder>/` on the server; returns the saved absolute path. */
+export async function uploadFile(file: File, dir: string, folder: string): Promise<string> {
+  const q = new URLSearchParams({ dir, folder, name: file.name });
+  const res = await fetch(`/api/fs/upload?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+    credentials: "same-origin",
+  });
+  const data = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) throw new ApiError(res.status, data.error || res.statusText);
+  return data.path as string;
+}
+
 export type PermissionMode = "default" | "acceptEdits" | "plan" | "bypassPermissions" | "dontAsk" | "auto";
 
 export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {

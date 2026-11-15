@@ -67,6 +67,37 @@ export function makeDir(parent: string | undefined | null, name: string): string
   return dir;
 }
 
+/**
+ * Saves an uploaded file as `<dir>/<folder>/<name>` (folder is relative, created if missing; "" = dir itself).
+ * Never overwrites an existing file. Returns the absolute path.
+ */
+export function saveUpload(dir: string | undefined | null, folder: string, name: string, data: Buffer): string {
+  const base = resolveDir(dir);
+  const sub = folder.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (sub.split("/").some((p) => (p === "" ? sub !== "" : p === "." || p === ".." || !/^[\w.@+ -]+$/.test(p)))) {
+    throw new HttpError(400, "Invalid folder");
+  }
+  const file = path.basename(name.replace(/\\/g, "/")).replace(/[^\w.@+ ()-]/g, "_").replace(/^\.+/, "");
+  if (!file) throw new HttpError(400, "Invalid file name");
+  const target = path.join(base, sub, file);
+  if (existsLocally(base)) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    try {
+      fs.writeFileSync(target, data, { flag: "wx" });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") throw new HttpError(409, `File already exists: ${target}`);
+      throw e;
+    }
+  } else {
+    try {
+      hostExecSync(base, ["sh", "-c", 'mkdir -p -- "$1" && set -C && cat > "$1/$2"', "sh", sub || ".", file], 120_000, data);
+    } catch {
+      throw new HttpError(409, `Could not write ${target} (already exists?)`);
+    }
+  }
+  return target;
+}
+
 export class HttpError extends Error {
   constructor(
     readonly status: number,

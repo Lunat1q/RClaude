@@ -239,6 +239,8 @@ form.page > .btn.primary { margin-top: 18px; }
 .input-row { display: flex; gap: 8px; align-items: flex-end; }
 .input-row textarea { resize: none; max-height: 40vh; }
 .resume-opts { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.attach-opts { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.attach-opts input { width: 180px; padding: 4px 8px; font-size: 13px; }
 .resume-opts select { width: auto; padding: 4px 8px; font-size: 13px; }
 
 /* --- settings --- */

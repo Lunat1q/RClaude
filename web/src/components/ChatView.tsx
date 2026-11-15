@@ -11,6 +11,7 @@ import {
   type RawMessage,
   type SessionSummary,
   type TerminalInfo,
+  uploadFile,
 } from "../api";
 import { navigate } from "../App";
 import { Markdown } from "./Markdown";
@@ -44,6 +45,9 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [uploadDir, setUploadDir] = useState(() => localStorage.getItem("rclaude:uploadDir") ?? "uploads");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
   const seenRef = useRef(new Set<string>());
   const promptTextsRef = useRef(new Set<string>());
@@ -181,6 +185,26 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
       onChanged();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const cwd = summary?.cwd ?? chat?.cwd;
+
+  const upload = async (files: FileList | null) => {
+    if (!files?.length || !cwd) return;
+    setError("");
+    setUploading(true);
+    try {
+      localStorage.setItem("rclaude:uploadDir", uploadDir);
+      const paths: string[] = [];
+      for (const f of Array.from(files)) paths.push(await uploadFile(f, cwd, uploadDir));
+      const refs = paths.map((p) => `Attached file: ${p}`).join("\n");
+      setInput((t) => (t.trim() ? `${t.trimEnd()}\n${refs}\n` : `${refs}\n`));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
@@ -361,7 +385,20 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
                 </select>
               </div>
             )}
+            <div className="attach-opts">
+              <span className="muted small">Uploads go to</span>
+              <input
+                value={uploadDir}
+                onChange={(e) => setUploadDir(e.target.value)}
+                placeholder="(session folder)"
+                title={`Folder under ${cwd ?? "the session directory"}`}
+              />
+            </div>
             <div className="input-row">
+              <input ref={fileRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
+              <button className="btn" onClick={() => fileRef.current?.click()} disabled={!cwd || uploading} title="Upload file">
+                {uploading ? "…" : "📎"}
+              </button>
               <textarea
                 rows={Math.min(8, Math.max(1, input.split("\n").length))}
                 value={input}

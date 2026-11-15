@@ -143,6 +143,7 @@ GET    /api/terminals/:id/output?chars=N    plain-text tail
 POST   /api/terminals/:id/input {data}
 WS     /ws/terminals/:id                    {type: input|resize} <-> {type: output|replay|exit|info}
 GET    /api/fs/dirs?path=                   browse directories
+POST   /api/fs/upload?dir&folder&name       raw file body; saved as dir/folder/name (no overwrite)
 ```
 
 Example:

@@ -25,7 +25,7 @@ import { hasValidSsoToken, ssoEnabled } from "./sso.js";
 import { chats, PERMISSION_MODES, type ChatSession } from "./chats.js";
 import { terminals, type TerminalKind } from "./terminals.js";
 import { getSessionSummary, listSessionSummaries, transcriptText } from "./sessions.js";
-import { HttpError, listDirs, makeDir, resolveDir } from "./workspace.js";
+import { HttpError, listDirs, makeDir, resolveDir, saveUpload } from "./workspace.js";
 import { hostExec, hostMode } from "./host.js";
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
@@ -231,6 +231,15 @@ export function apiRouter(): Router {
   r.post(
     "/fs/mkdir",
     h((req) => ({ path: makeDir(str(req.body?.parent), requireStr(req.body?.name, "name")) })),
+  );
+  r.post(
+    "/fs/upload",
+    express.raw({ type: () => true, limit: "100mb" }),
+    h((req) => {
+      if (!Buffer.isBuffer(req.body)) throw new HttpError(400, "File body is required");
+      const name = requireStr(req.query.name, "name");
+      return { path: saveUpload(str(req.query.dir), str(req.query.folder) ?? "", name, req.body) };
+    }),
   );
 
   // --- session history ---------------------------------------------------------
