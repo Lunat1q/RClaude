@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import express, { type Response, type Router } from "express";
+import express, { type Request, type Response, type Router } from "express";
 import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
@@ -7,7 +7,8 @@ import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextproto
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { config } from "./config.js";
 import { db, sha256, randomToken } from "./db.js";
-import { checkCredentials, OAUTH_ACCESS_PREFIX } from "./auth.js";
+import { checkCredentials, hasValidWebSession, OAUTH_ACCESS_PREFIX, SESSION_COOKIE } from "./auth.js";
+import { hasValidSsoToken } from "./sso.js";
 
 const ACCESS_TTL_MS = 60 * 60 * 1000;
 const REFRESH_TTL_MS = 90 * 86400_000;
@@ -57,7 +58,12 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-function renderConsent(res: Response, fields: Record<string, string>, clientName: string, error?: string): void {
+/** Already signed in to the web UI (session cookie) or through the SSO proxy: approving needs no password. */
+async function isSignedIn(req: Request): Promise<boolean> {
+  return hasValidWebSession(req.cookies?.[SESSION_COOKIE]) || (await hasValidSsoToken(req));
+}
+
+function renderConsent(res: Response, fields: Record<string, string>, clientName: string, signedIn: boolean, error?: string): void {
   const hidden = Object.entries(fields)
     .map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}">`)
     .join("");
@@ -81,8 +87,12 @@ function renderConsent(res: Response, fields: Record<string, string>, clientName
   <h1>Authorize access</h1>
   <p><strong>${escapeHtml(clientName)}</strong> wants full access to your Claude Code sessions on RClaude.</p>
   ${hidden}
-  <label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" required>
-  <label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>
+  ${
+    signedIn
+      ? `<p>Signed in as <strong>${escapeHtml(config.username)}</strong>.</p>`
+      : `<label for="u">Username</label><input id="u" type="text" name="username" autocomplete="username" required>
+  <label for="p">Password</label><input id="p" type="password" name="password" autocomplete="current-password" required>`
+  }
   ${error ? `<div class="err">${escapeHtml(error)}</div>` : ""}
   <button type="submit">Approve</button>
 </form></body></html>`);
@@ -102,6 +112,7 @@ class RClaudeOAuthProvider implements OAuthServerProvider {
         resource: params.resource?.href ?? "",
       },
       client.client_name || "An MCP client",
+      await isSignedIn(res.req),
     );
   }
 
@@ -209,11 +220,15 @@ export function oauthRouter(): Router {
       state: body.state ?? "",
       resource: body.resource ?? "",
     };
-    const result = await checkCredentials(req, body.username, body.password);
-    if (!result.ok) {
-      res.status(result.status === 429 ? 429 : 200);
-      renderConsent(res, fields, client.client_name || "An MCP client", result.error);
-      return;
+    // A signed-in user approves with one click. The Origin check stops other sites from submitting this form for them.
+    const sameOrigin = req.get("origin") === new URL(config.publicUrl).origin;
+    if (!(sameOrigin && (await isSignedIn(req)))) {
+      const result = await checkCredentials(req, body.username, body.password);
+      if (!result.ok) {
+        res.status(result.status === 429 ? 429 : 200);
+        renderConsent(res, fields, client.client_name || "An MCP client", false, result.error);
+        return;
+      }
     }
     const code = randomToken();
     db.prepare(
