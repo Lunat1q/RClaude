@@ -43,6 +43,11 @@ export const config = {
   ssoClientId: env("RCLAUDE_SSO_CLIENT_ID", ""),
   ssoEmail: env("RCLAUDE_SSO_EMAIL", "").toLowerCase(),
   ssoHeader: env("RCLAUDE_SSO_HEADER", "x-authentik-jwt").toLowerCase(),
+  /**
+   * The provider's client secret. When set, HS256 tokens signed with it are accepted too: authentik signs proxy
+   * provider tokens that way whenever the provider has no signing key, and it clears that key on its own.
+   */
+  ssoClientSecret: env("RCLAUDE_SSO_CLIENT_SECRET", ""),
   /** Where logout sends the browser so the SSO session ends too (authentik's forward-auth sign-out by default). */
   ssoLogoutUrl: env("RCLAUDE_SSO_LOGOUT_URL", "/outpost.goauthentik.io/sign_out"),
 };

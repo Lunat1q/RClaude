@@ -112,6 +112,7 @@ This gives whoever passes RClaude's auth the host user's full power. If that use
 | `RCLAUDE_HOST_CLAUDE` | `claude` | Claude command on the SSH host |
 | `RCLAUDE_SSO_ISSUER` | — | OIDC issuer of the forward-auth proxy's provider; with the next two, enables SSO |
 | `RCLAUDE_SSO_CLIENT_ID` | — | That provider's client ID (the ID token audience) |
+| `RCLAUDE_SSO_CLIENT_SECRET` | — | That provider's client secret; also accept HS256 ID tokens signed with it (authentik uses HS256 when the provider has no signing key) |
 | `RCLAUDE_SSO_EMAIL` | — | The one email allowed to sign in via SSO |
 | `RCLAUDE_SSO_HEADER` | `x-authentik-jwt` | Header carrying the signed ID token |
 | `RCLAUDE_SSO_LOGOUT_URL` | `/outpost.goauthentik.io/sign_out` | Where logout goes so the SSO session ends too |

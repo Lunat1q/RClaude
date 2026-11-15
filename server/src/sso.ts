@@ -26,16 +26,22 @@ function getJwks(): Promise<JWTVerifyGetKey> {
   return jwks;
 }
 
+const clientSecret = config.ssoClientSecret ? new TextEncoder().encode(config.ssoClientSecret) : undefined;
+
+/** RS256 tokens are checked against the issuer's keys; HS256 ones against the client secret (if configured). */
+const getKey: JWTVerifyGetKey = async (header, token) =>
+  header.alg === "HS256" && clientSecret ? clientSecret : (await getJwks())(header, token);
+
 /** True when the request carries a valid SSO ID token for the configured user. */
 export async function hasValidSsoToken(req: IncomingMessage): Promise<boolean> {
   if (!ssoEnabled) return false;
   const token = req.headers[config.ssoHeader];
   if (typeof token !== "string" || !token) return false;
   try {
-    const { payload } = await jwtVerify(token, await getJwks(), {
+    const { payload } = await jwtVerify(token, getKey, {
       issuer: config.ssoIssuer,
       audience: config.ssoClientId,
-      algorithms: ["RS256"],
+      algorithms: clientSecret ? ["RS256", "HS256"] : ["RS256"],
     });
     const email = typeof payload.email === "string" ? payload.email.toLowerCase() : "";
     if (email === config.ssoEmail) return true;
