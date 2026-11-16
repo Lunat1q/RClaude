@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import path from "node:path";
 import express, { type Request, type Response, type NextFunction, type Router } from "express";
 import { deleteSession, getSessionMessages, renameSession } from "@anthropic-ai/claude-agent-sdk";
 import { config } from "./config.js";
@@ -25,8 +26,8 @@ import { hasValidSsoToken, ssoEnabled } from "./sso.js";
 import { chats, PERMISSION_MODES, type ChatSession } from "./chats.js";
 import { terminals, type TerminalKind } from "./terminals.js";
 import { getSessionSummary, listSessionSummaries, transcriptText } from "./sessions.js";
-import { HttpError, listDirs, makeDir, resolveDir, saveUpload } from "./workspace.js";
-import { hostExec, hostMode } from "./host.js";
+import { HttpError, listDirs, makeDir, resolveDir, resolveFile, saveUpload } from "./workspace.js";
+import { hostExec, hostMode, remoteCommand, sshArgs } from "./host.js";
 
 type Handler = (req: Request, res: Response) => Promise<unknown> | unknown;
 
@@ -231,6 +232,29 @@ export function apiRouter(): Router {
   r.post(
     "/fs/mkdir",
     h((req) => ({ path: makeDir(str(req.body?.parent), requireStr(req.body?.name, "name")) })),
+  );
+  r.get(
+    "/fs/file",
+    h((req, res) => {
+      const { file, local } = resolveFile(requireStr(req.query.path, "path"));
+      const name = path.basename(file);
+      // Inline views run sandboxed (opaque origin), so a session-written HTML/SVG cannot script this app
+      res.set({ "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" });
+      res.attachment(name);
+      if (!req.query.download) {
+        res.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(name)}`);
+        // Source files (.ts is "video/mp2t" to mime) are shown as text rather than downloaded
+        if (!/^(image|audio)\/|^video\/(?!mp2t)|^application\/pdf$|^text\/html/.test(res.get("Content-Type") ?? "")) res.type("text/plain; charset=utf-8");
+      }
+      if (local) {
+        res.sendFile(file, { dotfiles: "allow" });
+        return undefined;
+      }
+      const p = spawn("ssh", [...sshArgs(false), remoteCommand("/", ["cat", "--", file])], { stdio: ["ignore", "pipe", "ignore"] });
+      p.stdout.pipe(res);
+      req.on("close", () => p.kill());
+      return undefined;
+    }),
   );
   r.post(
     "/fs/upload",

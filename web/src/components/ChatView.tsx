@@ -16,7 +16,7 @@ import {
 import { navigate } from "../App";
 import { Markdown } from "./Markdown";
 import { PermissionCard, type PermissionDecision } from "./PermissionCard";
-import { buildBlocks, toolSummary, type Block, type Entry } from "./transcript";
+import { buildBlocks, sessionFiles, toolSummary, type Block, type Entry, type SessionFile } from "./transcript";
 
 const coarsePointer = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
@@ -34,6 +34,45 @@ function ToolBlock({ b }: { b: Extract<Block, { kind: "tool" }> }) {
   );
 }
 
+function fileUrl(path: string, download = false): string {
+  return `/api/fs/file?${new URLSearchParams(download ? { path, download: "1" } : { path })}`;
+}
+
+function FilesPanel({ files, onClose }: { files: SessionFile[]; onClose: () => void }) {
+  return (
+    <aside className="files-panel">
+      <div className="files-head">
+        <strong>Session files</strong>
+        <button className="icon-btn" onClick={onClose} aria-label="Close files">
+          ×
+        </button>
+      </div>
+      {files.length === 0 && <div className="muted small pad">No files touched yet.</div>}
+      <ul>
+        {files.map((f) => {
+          const name = f.path.split(/[/\\]/).pop();
+          return (
+            <li key={f.path} title={f.path}>
+              <div className="file-name">
+                {name} <span className={`badge file-${f.action}`}>{f.action}</span>
+              </div>
+              <div className="file-path">{shortPath(f.path)}</div>
+              <div className="file-actions">
+                <a href={fileUrl(f.path)} target="_blank" rel="noopener">
+                  View
+                </a>
+                <a href={fileUrl(f.path, true)} download={name}>
+                  Download
+                </a>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
+  );
+}
+
 export function ChatView({ sessionId, onChanged }: { sessionId: string; onChanged: () => void }) {
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -47,6 +86,7 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
   const [notFound, setNotFound] = useState(false);
   const [uploadDir, setUploadDir] = useState(() => localStorage.getItem("rclaude:uploadDir") ?? "uploads");
   const [uploading, setUploading] = useState(false);
+  const [showFiles, setShowFiles] = useState(() => localStorage.getItem("rclaude:showFiles") === "1" && !coarsePointer);
   const fileRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
   const seenRef = useRef(new Set<string>());
@@ -189,6 +229,12 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
   };
 
   const cwd = summary?.cwd ?? chat?.cwd;
+  const files = useMemo(() => sessionFiles(blocks, cwd), [blocks, cwd]);
+  const toggleFiles = () =>
+    setShowFiles((v) => {
+      localStorage.setItem("rclaude:showFiles", v ? "0" : "1");
+      return !v;
+    });
 
   const upload = async (files: FileList | null) => {
     if (!files?.length || !cwd) return;
@@ -290,6 +336,9 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
           </span>
         </div>
         <div className="view-actions">
+          <button className={`btn small ${showFiles ? "" : "ghost"}`} onClick={toggleFiles} title="Files touched in this session">
+            Files{files.length > 0 && ` (${files.length})`}
+          </button>
           {terminalIds.length > 0 ? (
             <a className="btn small" href={`#/t/${terminalIds[0]}`}>
               Open terminal
@@ -313,6 +362,8 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
         </div>
       </header>
 
+      <div className="chat-body">
+      <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         <div className="chat-inner">
           {loading && <div className="muted pad">Loading…</div>}
@@ -417,6 +468,9 @@ export function ChatView({ sessionId, onChanged }: { sessionId: string; onChange
             </div>
           </>
         )}
+      </div>
+      </div>
+      {showFiles && <FilesPanel files={files} onClose={toggleFiles} />}
       </div>
     </div>
   );

@@ -91,6 +91,36 @@ export function buildBlocks(entries: Entry[]): Block[] {
   return blocks;
 }
 
+export type FileAction = "written" | "edited" | "uploaded" | "read";
+export interface SessionFile {
+  path: string;
+  action: FileAction;
+}
+
+const FILE_TOOLS: Record<string, FileAction> = { Write: "written", Edit: "edited", MultiEdit: "edited", NotebookEdit: "edited", Read: "read" };
+const RANK: FileAction[] = ["read", "uploaded", "edited", "written"];
+
+/**
+ * Files the conversation touched (file tools + uploads), most recent first, each with its strongest action.
+ * ponytail: files made via Bash aren't detected; parse commands if that turns out to matter.
+ */
+export function sessionFiles(blocks: Block[], cwd?: string): SessionFile[] {
+  const files = new Map<string, FileAction>();
+  const add = (raw: string, action: FileAction) => {
+    const p = /^([/\\]|[A-Za-z]:)/.test(raw) || !cwd ? raw : `${cwd.replace(/[/\\]+$/, "")}/${raw}`;
+    const prev = files.get(p);
+    files.delete(p); // re-insert so it moves to the end (most recent)
+    files.set(p, prev && RANK.indexOf(prev) > RANK.indexOf(action) ? prev : action);
+  };
+  for (const b of blocks) {
+    if (b.kind === "user" && !b.meta) for (const m of b.text.matchAll(/^Attached file: (.+)$/gm)) add(m[1].trim(), "uploaded");
+    if (b.kind !== "tool" || b.isError || !(b.name in FILE_TOOLS)) continue;
+    const p = b.input.file_path ?? b.input.notebook_path;
+    if (typeof p === "string" && p) add(p, FILE_TOOLS[b.name]);
+  }
+  return [...files].reverse().map(([path, action]) => ({ path, action }));
+}
+
 /** One-line summary of a tool call's input. */
 export function toolSummary(name: string, input: Record<string, unknown>): string {
   const s = (k: string) => (typeof input[k] === "string" ? (input[k] as string) : "");

@@ -41,6 +41,22 @@ export function resolveDir(input: string | undefined | null): string {
   throw new HttpError(400, `Directory does not exist: ${dir}`);
 }
 
+/** Resolves a file path (absolute, or relative to the workspace root); `local` = readable from this container. */
+export function resolveFile(input: string): { file: string; local: boolean } {
+  const file = path.resolve(config.workspaceDir, input.trim());
+  const stat = existsLocally(file);
+  if (stat?.isFile()) return { file, local: true };
+  if (!stat && hostMode) {
+    try {
+      hostExecSync("/", ["test", "-f", file]);
+      return { file, local: false };
+    } catch {
+      /* fall through */
+    }
+  }
+  throw new HttpError(404, `File not found: ${file}`);
+}
+
 export function listDirs(input: string | undefined | null): { path: string; parent: string | null; dirs: string[] } {
   const dir = resolveDir(input);
   let dirs: string[];
