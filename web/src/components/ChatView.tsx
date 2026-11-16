@@ -39,18 +39,57 @@ function fileUrl(path: string, download = false): string {
 }
 
 const isMarkdown = (p: string) => /\.(md|markdown|mdx)$/i.test(p);
+/** Opened by the browser in a new tab; everything else previews in the modal. */
+const isBrowserNative = (p: string) => /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg|mp4|webm|mov|mp3|wav|ogg|m4a|flac|pdf|html?)$/i.test(p);
+const LANG_ALIASES: Record<string, string> = { csproj: "xml", props: "xml", targets: "xml", config: "xml", vue: "xml", env: "ini" };
+const MAX_SHOW = 500_000;
+const MAX_HIGHLIGHT = 200_000;
 
-function MarkdownPreview({ path, onClose }: { path: string; onClose: () => void }) {
+function CodeView({ text, ext }: { text: string; ext: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  useEffect(() => {
+    if (text.length > MAX_HIGHLIGHT) return;
+    let live = true;
+    // Lazy chunk: highlight.js only loads when a file is previewed
+    void import("highlight.js/lib/common").then(({ default: hljs }) => {
+      const lang = LANG_ALIASES[ext] ?? ext;
+      if (live && hljs.getLanguage(lang)) setHtml(hljs.highlight(text, { language: lang, ignoreIllegals: true }).value);
+    });
+    return () => {
+      live = false;
+    };
+  }, [text, ext]);
+  // hljs output is escaped HTML
+  return <pre className="code-view hljs">{html === null ? <code>{text}</code> : <code dangerouslySetInnerHTML={{ __html: html }} />}</pre>;
+}
+
+function FilePreview({ path, onClose }: { path: string; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const name = path.split(/[/\\]/).pop();
+  const name = path.split(/[/\\]/).pop() ?? "";
+  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : name.toLowerCase();
   useEffect(() => {
     ref.current?.showModal();
-    api<string>(fileUrl(path).slice(4)).then(setText, (e) => setError(e instanceof Error ? e.message : String(e)));
+    api<string>(fileUrl(path).slice(4)).then(
+      (t) => setText(String(t)),
+      (e) => setError(e instanceof Error ? e.message : String(e)),
+    );
   }, [path]);
+  const body = () => {
+    if (error) return <div className="error">{error}</div>;
+    if (text === null) return <div className="muted">Loading…</div>;
+    if (text.includes("\u0000")) return <div className="muted">Binary file, no preview. Use Download.</div>;
+    const shown = text.length > MAX_SHOW ? text.slice(0, MAX_SHOW) : text;
+    return (
+      <>
+        {isMarkdown(path) ? <Markdown text={shown} /> : <CodeView text={shown} ext={ext} />}
+        {shown !== text && <div className="muted small pad">Showing the first {MAX_SHOW.toLocaleString()} characters. Download for the full file.</div>}
+      </>
+    );
+  };
   return (
-    <dialog ref={ref} className="md-preview" onClose={onClose} onClick={(e) => e.target === ref.current && ref.current.close()}>
+    <dialog ref={ref} className="file-preview" onClose={onClose} onClick={(e) => e.target === ref.current && ref.current.close()}>
       <header className="files-head">
         <strong title={path}>{name}</strong>
         <span className="file-actions">
@@ -65,9 +104,7 @@ function MarkdownPreview({ path, onClose }: { path: string; onClose: () => void 
           </button>
         </span>
       </header>
-      <div className="md-preview-body">
-        {error ? <div className="error">{error}</div> : text === null ? <div className="muted">Loading…</div> : <Markdown text={text} />}
-      </div>
+      <div className={`file-preview-body ${isMarkdown(path) ? "" : "code"}`}>{body()}</div>
     </dialog>
   );
 }
@@ -76,7 +113,7 @@ function FilesPanel({ files, onClose }: { files: SessionFile[]; onClose: () => v
   const [preview, setPreview] = useState<string | null>(null);
   return (
     <aside className="files-panel">
-      {preview && <MarkdownPreview path={preview} onClose={() => setPreview(null)} />}
+      {preview && <FilePreview path={preview} onClose={() => setPreview(null)} />}
       <div className="files-head">
         <strong>Session files</strong>
         <button className="icon-btn" onClick={onClose} aria-label="Close files">
@@ -99,7 +136,7 @@ function FilesPanel({ files, onClose }: { files: SessionFile[]; onClose: () => v
                   target="_blank"
                   rel="noopener"
                   onClick={(e) => {
-                    if (!isMarkdown(f.path)) return;
+                    if (isBrowserNative(f.path)) return;
                     e.preventDefault();
                     setPreview(f.path);
                   }}
