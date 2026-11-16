@@ -38,9 +38,45 @@ function fileUrl(path: string, download = false): string {
   return `/api/fs/file?${new URLSearchParams(download ? { path, download: "1" } : { path })}`;
 }
 
+const isMarkdown = (p: string) => /\.(md|markdown|mdx)$/i.test(p);
+
+function MarkdownPreview({ path, onClose }: { path: string; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [text, setText] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const name = path.split(/[/\\]/).pop();
+  useEffect(() => {
+    ref.current?.showModal();
+    api<string>(fileUrl(path).slice(4)).then(setText, (e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [path]);
+  return (
+    <dialog ref={ref} className="md-preview" onClose={onClose} onClick={(e) => e.target === ref.current && ref.current.close()}>
+      <header className="files-head">
+        <strong title={path}>{name}</strong>
+        <span className="file-actions">
+          <a href={fileUrl(path)} target="_blank" rel="noopener">
+            Raw
+          </a>
+          <a href={fileUrl(path, true)} download={name}>
+            Download
+          </a>
+          <button className="icon-btn" onClick={() => ref.current?.close()} aria-label="Close preview">
+            ×
+          </button>
+        </span>
+      </header>
+      <div className="md-preview-body">
+        {error ? <div className="error">{error}</div> : text === null ? <div className="muted">Loading…</div> : <Markdown text={text} />}
+      </div>
+    </dialog>
+  );
+}
+
 function FilesPanel({ files, onClose }: { files: SessionFile[]; onClose: () => void }) {
+  const [preview, setPreview] = useState<string | null>(null);
   return (
     <aside className="files-panel">
+      {preview && <MarkdownPreview path={preview} onClose={() => setPreview(null)} />}
       <div className="files-head">
         <strong>Session files</strong>
         <button className="icon-btn" onClick={onClose} aria-label="Close files">
@@ -58,7 +94,16 @@ function FilesPanel({ files, onClose }: { files: SessionFile[]; onClose: () => v
               </div>
               <div className="file-path">{shortPath(f.path)}</div>
               <div className="file-actions">
-                <a href={fileUrl(f.path)} target="_blank" rel="noopener">
+                <a
+                  href={fileUrl(f.path)}
+                  target="_blank"
+                  rel="noopener"
+                  onClick={(e) => {
+                    if (!isMarkdown(f.path)) return;
+                    e.preventDefault();
+                    setPreview(f.path);
+                  }}
+                >
                   View
                 </a>
                 <a href={fileUrl(f.path, true)} download={name}>
